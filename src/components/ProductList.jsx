@@ -11,7 +11,12 @@ const ProductList = ({ contract, account }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    // 📌 Obtiene TODO desde el SmartContract — sin localStorage
+    // Modal para Etherscan
+    const [txModal, setTxModal] = useState({
+        open: false,
+        hash: ""
+    });
+
     const fetchProducts = useCallback(async () => {
         if (!contract) {
             console.log('⚠️ Contrato no disponible');
@@ -23,16 +28,18 @@ const ProductList = ({ contract, account }) => {
         setError('');
 
         try {
-            console.log('📦 Cargando productos desde el contrato...');
-
+            console.log('📦 Iniciando carga de productos...');
+            
             const count = await contract.productCount();
-            const total = Number(count);
+            const productCount = Number(count);
+            console.log('📊 Total de productos:', productCount);
 
             const fetchedProducts = [];
-
-            for (let i = 1; i <= total; i++) {
+            
+            for (let i = 1; i <= productCount; i++) {
                 try {
                     const product = await contract.products(i);
+                    
                     if (Number(product.productId) !== 0) {
                         fetchedProducts.push({
                             id: Number(product.productId),
@@ -43,56 +50,61 @@ const ProductList = ({ contract, account }) => {
                             owner: product.owner,
                             creator: product.creator || product.owner
                         });
+                    } else {
+                        break;
                     }
                 } catch {
+                    console.log(`⏭️ Fin de productos en índice ${i}`);
                     break;
                 }
             }
 
+            console.log(`✅ ${fetchedProducts.length} productos cargados`);
             setProducts(fetchedProducts);
-            console.log(`✅ Productos cargados desde blockchain: ${fetchedProducts.length}`);
+            setError('');
 
         } catch (err) {
             console.error('❌ Error al cargar productos:', err);
-            setError(err.message || 'Error desconocido');
+            setError(`No se pudieron cargar los productos: ${err.message || 'Error desconocido'}`);
         } finally {
             setLoading(false);
         }
     }, [contract]);
 
-    // ⚡ Comprar directo del contrato (sin localStorage)
     const handleBuy = async (productId, price) => {
-        if (!contract) return alert('❌ Contrato no disponible');
+        if (!contract) {
+            alert('❌ Contrato no disponible');
+            return;
+        }
 
         try {
+            console.log(`💰 Iniciando compra del producto ${productId}...`);
+            
             const tx = await contract.buyProduct(productId, { value: price });
 
-            const ver = confirm(
-                `Transacción enviada\nHash: ${tx.hash}\n\n¿Ver en Etherscan?`
-            );
-
-            if (ver) {
-                window.open(`https://sepolia.etherscan.io/tx/${tx.hash}`, "_blank");
-            }
+            // 👉 Mostrar modal con el hash
+            setTxModal({
+                open: true,
+                hash: tx.hash
+            });
 
             await tx.wait();
-            alert("✅ Compra completada en la blockchain");
+            console.log('✅ Transacción confirmada');
 
-            // Recargar desde el contrato
             await fetchProducts();
 
         } catch (err) {
-            const msg = err.reason || err.message || 'Error desconocido';
-            alert(`❌ Error al comprar: ${msg}`);
-            await fetchProducts();
+            console.error('❌ Error en la compra:', err);
+            const errorMsg = err.reason || err.message || 'Error desconocido';
+            alert(`❌ Fallo en la compra: ${errorMsg}`);
         }
     };
 
     useEffect(() => {
+        console.log('🔄 ProductList montado');
         fetchProducts();
     }, [fetchProducts]);
 
-    // ---------- UI (IGUAL QUE LA TUYA) ----------
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center py-20">
@@ -114,27 +126,6 @@ const ProductList = ({ contract, account }) => {
                 >
                     <RefreshCw size={16} className="mr-2" />
                     Reintentar
-                </button>
-            </div>
-        );
-    }
-
-    if (products.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center py-20">
-                <Tag size={64} className="text-gray-300 mb-4" />
-                <p className="text-gray-500 text-xl font-semibold mb-2">
-                    El inventario está vacío
-                </p>
-                <p className="text-gray-400 mb-4">
-                    Crea tu primer artículo desde la pestaña "Publicar"
-                </p>
-                <button
-                    onClick={fetchProducts}
-                    className="text-pink-500 hover:text-pink-600 flex items-center text-sm"
-                >
-                    <RefreshCw size={14} className="mr-2" />
-                    Actualizar
                 </button>
             </div>
         );
@@ -164,72 +155,92 @@ const ProductList = ({ contract, account }) => {
                     <div className="col-span-2 text-right">Acción</div>
                 </div>
 
-                {products.map((product) => {
-                    const isOwner =
-                        account &&
-                        product.owner.toLowerCase() === account.toLowerCase();
-
-                    return (
-                        <div
-                            key={product.id}
-                            className={`grid grid-cols-12 gap-4 items-center p-5 text-gray-800 transition duration-300 border-b border-gray-100 
-                                ${product.isAvailable
-                                    ? 'bg-gradient-to-r from-white to-pink-50 hover:bg-pink-100'
-                                    : 'bg-gray-50/50 hover:bg-gray-100'}`}
-                        >
-                            <div className="col-span-3 font-semibold text-lg flex items-center">
-                                <Tag size={18} className="text-pink-500 mr-2" />
-                                <span className="truncate" title={product.name}>
-                                    {product.name}
-                                </span>
-                            </div>
-
-                            <div className="col-span-3 text-sm italic text-gray-500 truncate" title={product.description}>
-                                {product.description}
-                            </div>
-
-                            <div className="col-span-2 text-center font-bold text-lg text-pink-700">
-                                {formatEther(product.price)}
-                            </div>
-
-                            <div className="col-span-2 text-center">
-                                {product.isAvailable ? (
-                                    <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-300 shadow-md">
-                                        🟢 En Venta
-                                    </span>
-                                ) : (
-                                    <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-300 shadow-md">
-                                        🔴 Vendido
-                                    </span>
-                                )}
-                            </div>
-
-                            <div className="col-span-2 text-right">
-                                {product.isAvailable ? (
-                                    isOwner ? (
-                                        <div className="flex items-center justify-end text-blue-600 text-sm">
-                                            <Info size={16} className="mr-1" />
-                                            Tu producto
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={() => handleBuy(product.id, product.price)}
-                                            className="bg-pink-500 hover:bg-pink-600 text-white font-bold py-2 px-4 rounded-full text-sm transition duration-300 transform hover:scale-105 shadow-lg flex items-center justify-end ml-auto"
-                                        >
-                                            <Zap size={16} className="mr-1" /> Comprar
-                                        </button>
-                                    )
-                                ) : (
-                                    <div className="flex items-center justify-end text-gray-400 text-xs">
-                                        <Info size={14} className="mr-1" />
-                                        <span>Vendido</span>
-                                    </div>
-                                )}
-                            </div>
+                {products.map((product) => (
+                    <div
+                        key={product.id}
+                        className={`grid grid-cols-12 gap-4 items-center p-5 text-gray-800 transition duration-300 border-b border-gray-100
+                                    ${product.isAvailable ? 'bg-gradient-to-r from-white to-pink-50 hover:bg-pink-100' : 'bg-gray-50/50 hover:bg-gray-100'}`}
+                    >
+                        <div className="col-span-3 font-semibold text-lg flex items-center">
+                            <Tag size={18} className="text-pink-500 mr-2" />
+                            <span className="truncate" title={product.name}>
+                                {product.name}
+                            </span>
                         </div>
-                    );
-                })}
+
+                        <div className="col-span-3 text-sm italic text-gray-500 truncate" title={product.description}>
+                            {product.description}
+                        </div>
+
+                        <div className="col-span-2 text-center font-bold text-lg text-pink-700">
+                            {formatEther(product.price)}
+                        </div>
+
+                        <div className="col-span-2 text-center">
+                            {product.isAvailable ? (
+                                <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-300 shadow-md">
+                                    🟢 En Venta
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-300 shadow-md">
+                                    🔴 Vendido
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="col-span-2 text-right">
+                            {product.isAvailable ? (
+                                <button
+                                    onClick={() => handleBuy(product.id, product.price)}
+                                    className="bg-pink-500 hover:bg-pink-600 text-white font-bold py-2 px-4 rounded-full text-sm transition duration-300 transform hover:scale-105 shadow-lg flex items-center justify-end ml-auto"
+                                >
+                                    <Zap size={16} className="mr-1" /> Comprar
+                                </button>
+                            ) : (
+                                <div className="flex items-center justify-end text-gray-400 text-xs">
+                                    <Info size={14} className="mr-1" />
+                                    <span>Vendido</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ))}
             </div>
+
+            {/* Modal de Transacción */}
+            {txModal.open && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 w-96 border border-pink-200">
+                        
+                        <h2 className="text-xl font-bold text-pink-600 mb-4 text-center">
+                            Transacción enviada 🚀
+                        </h2>
+
+                        <p className="text-gray-700 text-sm mb-4 text-center">
+                            Tu compra está procesándose en la blockchain.
+                        </p>
+
+                        <div className="bg-gray-100 rounded-xl p-3 text-xs text-gray-500 break-all mb-4">
+                            {txModal.hash}
+                        </div>
+
+                        <a
+                            href={`https://sepolia.etherscan.io/tx/${txModal.hash}`}
+                            target="_blank"
+                            className="block w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-2 rounded-xl text-center transition"
+                        >
+                            Ver en Etherscan
+                        </a>
+
+                        <button
+                            onClick={() => setTxModal({ open: false, hash: "" })}
+                            className="mt-4 w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 rounded-xl transition"
+                        >
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
