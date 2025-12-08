@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
-import { History, RefreshCw, AlertCircle, ExternalLink, ShoppingCart, Plus, TrendingUp } from 'lucide-react';
+import { History, RefreshCw, AlertCircle, ShoppingCart, Plus } from 'lucide-react';
 
 const formatEther = (wei) => {
     return ethers.formatEther(wei);
@@ -24,15 +24,9 @@ const TransactionHistory = ({ contract, account }) => {
         try {
             console.log('📜 Cargando historial...');
             
-            let productCount = 0;
-            try {
-                const count = await contract.productCount();
-                productCount = Number(count);
-                console.log('📊 Total de productos:', productCount);
-            } catch (countError) {
-                console.warn('⚠️ No se pudo obtener productCount');
-                productCount = 20;
-            }
+            const count = await contract.productCount();
+            const productCount = Number(count);
+            console.log('📊 Total de productos:', productCount);
 
             const historyArray = [];
             
@@ -44,26 +38,10 @@ const TransactionHistory = ({ contract, account }) => {
                     if (Number(product.productId) !== 0) {
                         const accountLower = account.toLowerCase();
                         const productOwner = product.owner ? product.owner.toLowerCase() : '';
+                        const productCreator = product.creator ? product.creator.toLowerCase() : '';
                         
-                        console.log(`Producto ${i}:`, {
-                            name: product.name,
-                            owner: productOwner,
-                            isAvailable: product.isAvailable,
-                            currentAccount: accountLower,
-                            match: productOwner === accountLower
-                        });
-                        
-                        // Obtener hash
-                        let txHash = 'N/A';
-                        try {
-                            const hashIndex = i - 1;
-                            txHash = await contract.transactionHashes(hashIndex);
-                        } catch (hashError) {
-                            console.warn(`⚠️ No se pudo obtener hash para producto ${i}`);
-                        }
-
-                        // Si el usuario es el owner Y el producto está disponible = LO CREÓ
-                        if (productOwner === accountLower && product.isAvailable) {
+                        // Si el usuario CREÓ el producto (es el creator)
+                        if (productCreator === accountLower) {
                             console.log(`✅ Transacción de CREACIÓN encontrada: ${product.name}`);
                             historyArray.push({
                                 id: `create-${product.productId}`,
@@ -72,14 +50,13 @@ const TransactionHistory = ({ contract, account }) => {
                                 type: 'create',
                                 typeLabel: 'Creación',
                                 price: product.price,
-                                hash: txHash,
                                 date: new Date().toLocaleDateString(),
-                                status: 'En venta'
+                                status: product.isAvailable ? 'En venta' : 'Vendido'
                             });
                         }
 
-                        // Si el usuario es el owner Y el producto NO está disponible = LO COMPRÓ
-                        if (productOwner === accountLower && !product.isAvailable) {
+                        // Si el usuario COMPRÓ el producto (es owner pero NO creator)
+                        if (productOwner === accountLower && productCreator !== accountLower && !product.isAvailable) {
                             console.log(`✅ Transacción de COMPRA encontrada: ${product.name}`);
                             historyArray.push({
                                 id: `buy-${product.productId}`,
@@ -88,7 +65,6 @@ const TransactionHistory = ({ contract, account }) => {
                                 type: 'buy',
                                 typeLabel: 'Compra',
                                 price: product.price,
-                                hash: txHash,
                                 date: new Date().toLocaleDateString(),
                                 status: 'Completado'
                             });
@@ -103,7 +79,7 @@ const TransactionHistory = ({ contract, account }) => {
                 }
             }
 
-            // Ordenar por fecha (más recientes primero) - en producción usarías timestamps reales
+            // Ordenar por ID descendente (más recientes primero)
             historyArray.reverse();
 
             console.log(`✅ Historial cargado: ${historyArray.length} transacciones`);
@@ -123,10 +99,6 @@ const TransactionHistory = ({ contract, account }) => {
         loadHistory();
     }, [loadHistory]);
 
-    const openEtherscan = (hash) => {
-        window.open(`https://sepolia.etherscan.io/tx/${hash}`, '_blank');
-    };
-
     const getTypeIcon = (type) => {
         switch(type) {
             case 'create':
@@ -134,7 +106,7 @@ const TransactionHistory = ({ contract, account }) => {
             case 'buy':
                 return <ShoppingCart size={20} className="text-green-500" />;
             default:
-                return <TrendingUp size={20} className="text-gray-500" />;
+                return null;
         }
     };
 
@@ -149,7 +121,6 @@ const TransactionHistory = ({ contract, account }) => {
         }
     };
 
-    // Estado de carga
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center py-20">
@@ -159,7 +130,6 @@ const TransactionHistory = ({ contract, account }) => {
         );
     }
 
-    // Estado de error
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center py-20">
@@ -177,7 +147,6 @@ const TransactionHistory = ({ contract, account }) => {
         );
     }
 
-    // Sin transacciones
     if (transactions.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20">
@@ -199,7 +168,6 @@ const TransactionHistory = ({ contract, account }) => {
         );
     }
 
-    // Historial de transacciones
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
@@ -216,7 +184,6 @@ const TransactionHistory = ({ contract, account }) => {
                 </button>
             </div>
 
-            {/* Tabla de transacciones */}
             <div className="bg-white rounded-xl shadow-xl border border-pink-100 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
@@ -227,13 +194,11 @@ const TransactionHistory = ({ contract, account }) => {
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Monto</th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Fecha</th>
                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Estado</th>
-                                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase">Acción</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {transactions.map((tx) => (
                                 <tr key={tx.id} className="hover:bg-pink-50 transition">
-                                    {/* Tipo */}
                                     <td className="px-6 py-4">
                                         <div className="flex items-center space-x-2">
                                             {getTypeIcon(tx.type)}
@@ -243,7 +208,6 @@ const TransactionHistory = ({ contract, account }) => {
                                         </div>
                                     </td>
 
-                                    {/* Producto */}
                                     <td className="px-6 py-4">
                                         <div>
                                             <p className="font-semibold text-gray-800">{tx.productName}</p>
@@ -251,39 +215,24 @@ const TransactionHistory = ({ contract, account }) => {
                                         </div>
                                     </td>
 
-                                    {/* Monto */}
                                     <td className="px-6 py-4">
                                         <span className="font-bold text-pink-600">
                                             {formatEther(tx.price)} ETH
                                         </span>
                                     </td>
 
-                                    {/* Fecha */}
                                     <td className="px-6 py-4 text-sm text-gray-600">
                                         {tx.date}
                                     </td>
 
-                                    {/* Estado */}
                                     <td className="px-6 py-4">
-                                        <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
+                                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                            tx.status === 'Completado' || tx.status === 'Vendido'
+                                                ? 'bg-green-100 text-green-700'
+                                                : 'bg-yellow-100 text-yellow-700'
+                                        }`}>
                                             {tx.status}
                                         </span>
-                                    </td>
-
-                                    {/* Acción */}
-                                    <td className="px-6 py-4 text-center">
-                                        {tx.hash && tx.hash !== 'N/A' && tx.hash.startsWith('0x') ? (
-                                            <button
-                                                onClick={() => openEtherscan(tx.hash)}
-                                                className="inline-flex items-center px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs transition"
-                                                title="Ver en Etherscan"
-                                            >
-                                                <ExternalLink size={12} className="mr-1" />
-                                                Ver
-                                            </button>
-                                        ) : (
-                                            <span className="text-gray-400 text-xs">N/A</span>
-                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -292,7 +241,6 @@ const TransactionHistory = ({ contract, account }) => {
                 </div>
             </div>
 
-            {/* Resumen */}
             <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <p className="text-sm text-blue-600 font-semibold mb-1">Productos Creados</p>

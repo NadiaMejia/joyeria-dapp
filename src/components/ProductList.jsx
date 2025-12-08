@@ -1,33 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
-import { Tag, Zap, Hourglass, RefreshCw, AlertCircle, ExternalLink, Info } from 'lucide-react';
+import { Tag, Zap, Hourglass, RefreshCw, AlertCircle, Info } from 'lucide-react';
 
 const formatEther = (wei) => {
     return ethers.formatEther(wei);
-};
-
-// Funciones para localStorage
-const STORAGE_KEY = 'product_transaction_hashes';
-
-const saveTransactionHash = (productId, txHash) => {
-    try {
-        const hashes = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-        hashes[productId] = txHash;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(hashes));
-        console.log(`💾 Hash guardado para producto ${productId}:`, txHash);
-    } catch (error) {
-        console.error('Error guardando hash:', error);
-    }
-};
-
-const getTransactionHash = (productId) => {
-    try {
-        const hashes = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-        return hashes[productId] || null;
-    } catch (error) {
-        console.error('Error leyendo hash:', error);
-        return null;
-    }
 };
 
 const ProductList = ({ contract, account }) => {
@@ -48,15 +24,9 @@ const ProductList = ({ contract, account }) => {
         try {
             console.log('📦 Iniciando carga de productos...');
             
-            let productCount = 0;
-            try {
-                const count = await contract.productCount();
-                productCount = Number(count);
-                console.log('📊 Total de productos:', productCount);
-            } catch (countError) {
-                console.warn('⚠️ No se pudo obtener productCount');
-                productCount = 20;
-            }
+            const count = await contract.productCount();
+            const productCount = Number(count);
+            console.log('📊 Total de productos:', productCount);
 
             const fetchedProducts = [];
             
@@ -65,23 +35,14 @@ const ProductList = ({ contract, account }) => {
                     const product = await contract.products(i);
                     
                     if (Number(product.productId) !== 0) {
-                        const productId = Number(product.productId);
-                        const isAvailable = product.isAvailable !== undefined ? product.isAvailable : true;
-                        
-                        let txHash = null;
-                        if (!isAvailable) {
-                            txHash = getTransactionHash(productId);
-                        }
-
                         fetchedProducts.push({
-                            id: productId,
+                            id: Number(product.productId),
                             name: product.name || 'Sin nombre',
                             description: product.description || 'Sin descripción',
                             price: product.price,
-                            isAvailable: isAvailable,
+                            isAvailable: product.isAvailable,
                             owner: product.owner,
-                            creator: product.creator || product.owner,
-                            transactionHash: txHash
+                            creator: product.creator || product.owner
                         });
                     } else {
                         break;
@@ -119,18 +80,6 @@ const ProductList = ({ contract, account }) => {
 
             console.log('📤 Hash de transacción:', tx.hash);
 
-            // Guardar hash en localStorage
-            saveTransactionHash(productId, tx.hash);
-
-            // Actualizar UI inmediatamente
-            setProducts(prevProducts => 
-                prevProducts.map(p => 
-                    p.id === productId 
-                        ? { ...p, transactionHash: tx.hash, isAvailable: false }
-                        : p
-                )
-            );
-
             const verEnEtherscan = confirm(
                 `⏳ Transacción enviada!\n\nHash: ${tx.hash}\n\n¿Quieres ver la transacción en Sepolia Etherscan?`
             );
@@ -144,14 +93,15 @@ const ProductList = ({ contract, account }) => {
             
             alert(`✅ ¡Compra exitosa!\n\nEl producto ahora es tuyo.\n\nHash: ${tx.hash}`);
             
-            fetchProducts(); 
+            // Recargar productos después de la compra
+            await fetchProducts(); 
 
         } catch (err) {
             console.error('❌ Error en la compra:', err);
             const errorMsg = err.reason || err.message || 'Error desconocido';
             alert(`❌ Fallo en la compra: ${errorMsg}`);
             
-            fetchProducts();
+            await fetchProducts();
         }
     };
     
@@ -194,7 +144,7 @@ const ProductList = ({ contract, account }) => {
                     El inventario está vacío
                 </p>
                 <p className="text-gray-400 mb-4">
-                    Crea tu primer artículo desde la pestaña "Crear Artículo"
+                    Crea tu primer artículo desde la pestaña "Publicar"
                 </p>
                 <button
                     onClick={fetchProducts}
@@ -231,82 +181,67 @@ const ProductList = ({ contract, account }) => {
                     <div className="col-span-2 text-right">Acción</div>
                 </div>
 
-                {products.map((product) => (
-                    <div 
-                        key={product.id} 
-                        className={`grid grid-cols-12 gap-4 items-center p-5 text-gray-800 transition duration-300 border-b border-gray-100 
-                                    ${product.isAvailable ? 'bg-gradient-to-r from-white to-pink-50 hover:bg-pink-100' : 'bg-gray-50/50 hover:bg-gray-100'}`}
-                    >
-                        <div className="col-span-3 font-semibold text-lg flex items-center">
-                            <Tag size={18} className="text-pink-500 mr-2"/>
-                            <span className="truncate" title={product.name}>
-                                {product.name}
-                            </span>
-                        </div>
-
-                        <div className="col-span-3 text-sm italic text-gray-500 truncate" title={product.description}>
-                            {product.description}
-                        </div>
-
-                        <div className="col-span-2 text-center font-bold text-lg text-pink-700">
-                            {formatEther(product.price)}
-                        </div>
-
-                        <div className="col-span-2 text-center">
-                            {product.isAvailable ? (
-                                <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-300 shadow-md">
-                                    🟢 En Venta
+                {products.map((product) => {
+                    const isOwner = account && product.owner.toLowerCase() === account.toLowerCase();
+                    
+                    return (
+                        <div 
+                            key={product.id} 
+                            className={`grid grid-cols-12 gap-4 items-center p-5 text-gray-800 transition duration-300 border-b border-gray-100 
+                                        ${product.isAvailable ? 'bg-gradient-to-r from-white to-pink-50 hover:bg-pink-100' : 'bg-gray-50/50 hover:bg-gray-100'}`}
+                        >
+                            <div className="col-span-3 font-semibold text-lg flex items-center">
+                                <Tag size={18} className="text-pink-500 mr-2"/>
+                                <span className="truncate" title={product.name}>
+                                    {product.name}
                                 </span>
-                            ) : (
-                                <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-300 shadow-md">
-                                    🔴 Vendido
-                                </span>
-                            )}
-                        </div>
+                            </div>
 
-                        <div className="col-span-2 text-right">
-                            {product.isAvailable ? (
-                                <button
-                                    onClick={() => handleBuy(product.id, product.price)}
-                                    className="bg-pink-500 hover:bg-pink-600 text-white font-bold py-2 px-4 rounded-full text-sm transition duration-300 transform hover:scale-105 shadow-lg flex items-center justify-end ml-auto"
-                                >
-                                    <Zap size={16} className="mr-1" /> Comprar
-                                </button>
-                            ) : (
-                                <div className="flex flex-col items-end space-y-2">
-                                    {product.transactionHash ? (
-                                        <>
-                                            <span 
-                                                className="text-blue-600 text-xs font-mono truncate max-w-[120px] cursor-pointer hover:text-blue-800 hover:underline" 
-                                                title={`Click para ver: ${product.transactionHash}`}
-                                                onClick={() => window.open(`https://sepolia.etherscan.io/tx/${product.transactionHash}`, '_blank')}
-                                            >
-                                                {product.transactionHash.slice(0, 6)}...{product.transactionHash.slice(-4)}
-                                            </span>
-                                            <button
-                                                onClick={() => window.open(`https://sepolia.etherscan.io/tx/${product.transactionHash}`, '_blank')}
-                                                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition duration-300 flex items-center shadow-md hover:shadow-lg"
-                                            >
-                                                <ExternalLink size={12} className="mr-1" />
-                                                Ver TX
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <div className="flex flex-col items-end space-y-1">
-                                            <div className="flex items-center text-gray-400 text-xs">
-                                                <Info size={14} className="mr-1" />
-                                                <span>Comprado antes</span>
-                                            </div>
-                                            <span className="text-gray-400 text-[10px]">
-                                                (Sin registro de TX)
-                                            </span>
+                            <div className="col-span-3 text-sm italic text-gray-500 truncate" title={product.description}>
+                                {product.description}
+                            </div>
+
+                            <div className="col-span-2 text-center font-bold text-lg text-pink-700">
+                                {formatEther(product.price)}
+                            </div>
+
+                            <div className="col-span-2 text-center">
+                                {product.isAvailable ? (
+                                    <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-300 shadow-md">
+                                        🟢 En Venta
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-300 shadow-md">
+                                        🔴 Vendido
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="col-span-2 text-right">
+                                {product.isAvailable ? (
+                                    isOwner ? (
+                                        <div className="flex items-center justify-end text-blue-600 text-sm">
+                                            <Info size={16} className="mr-1" />
+                                            Tu producto
                                         </div>
-                                    )}
-                                </div>
-                            )}
+                                    ) : (
+                                        <button
+                                            onClick={() => handleBuy(product.id, product.price)}
+                                            className="bg-pink-500 hover:bg-pink-600 text-white font-bold py-2 px-4 rounded-full text-sm transition duration-300 transform hover:scale-105 shadow-lg flex items-center justify-end ml-auto"
+                                        >
+                                            <Zap size={16} className="mr-1" /> Comprar
+                                        </button>
+                                    )
+                                ) : (
+                                    <div className="flex items-center justify-end text-gray-400 text-xs">
+                                        <Info size={14} className="mr-1" />
+                                        <span>Vendido</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );

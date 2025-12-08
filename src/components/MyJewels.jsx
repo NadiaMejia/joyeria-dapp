@@ -1,28 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
-import { Gem, RefreshCw, AlertCircle, Hourglass, ExternalLink, Info, Crown, Calendar, DollarSign } from 'lucide-react';
+import { Gem, RefreshCw, AlertCircle, Hourglass, Info, Crown, DollarSign } from 'lucide-react';
 
 const formatEther = (wei) => {
     return ethers.formatEther(wei);
-};
-
-const STORAGE_KEY = 'product_transaction_hashes';
-
-const getTransactionHash = (productId) => {
-    try {
-        const hashes = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-        return hashes[productId] || null;
-    } catch (error) {
-        console.error('Error leyendo hash:', error);
-        return null;
-    }
 };
 
 const MyJewels = ({ contract, account }) => {
     const [myProducts, setMyProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [loadMethod, setLoadMethod] = useState('');
 
     const fetchMyJewels = useCallback(async () => {
         if (!contract || !account) {
@@ -37,104 +24,39 @@ const MyJewels = ({ contract, account }) => {
         try {
             console.log('💎 Cargando joyas del propietario:', account);
 
-            let jewels = [];
-            let method = '';
+            const jewels = [];
 
-            // MÉTODO 1: Usar getProductsByOwner (contrato nuevo)
-            try {
-                console.log('🔍 Intentando método 1: getProductsByOwner()...');
+            // Obtener IDs de productos que te pertenecen
+            const productIds = await contract.getProductsByOwner(account);
+            console.log('📋 IDs encontrados:', productIds.map(id => Number(id)));
+
+            // Cargar detalles de cada producto
+            for (let i = 0; i < productIds.length; i++) {
+                const productId = Number(productIds[i]);
                 
-                if (typeof contract.getProductsByOwner === 'function') {
-                    const productIds = await contract.getProductsByOwner(account);
-                    console.log('📋 IDs encontrados:', productIds.map(id => Number(id)));
-
-                    if (productIds.length > 0) {
-                        method = 'getProductsByOwner';
-                        
-                        for (let i = 0; i < productIds.length; i++) {
-                            const productId = Number(productIds[i]);
-                            
-                            try {
-                                const product = await contract.products(productId);
-                                const txHash = getTransactionHash(productId);
-                                
-                                jewels.push({
-                                    id: productId,
-                                    name: product.name || 'Sin nombre',
-                                    description: product.description || 'Sin descripción',
-                                    price: product.price,
-                                    owner: product.owner,
-                                    creator: product.creator || product.owner,
-                                    isAvailable: product.isAvailable,
-                                    transactionHash: txHash,
-                                    purchaseDate: 'Reciente'
-                                });
-
-                                console.log(`✅ Joya ${productId} cargada`);
-                            } catch (productError) {
-                                console.error(`❌ Error cargando producto ${productId}:`, productError);
-                            }
-                        }
-
-                        console.log(`✅ Método 1 exitoso: ${jewels.length} joyas`);
-                    }
-                }
-            } catch (error1) {
-                console.log('⚠️ Método 1 falló, intentando método 2...');
-            }
-
-            // MÉTODO 2: Leer eventos ProductSold (fallback)
-            if (jewels.length === 0) {
                 try {
-                    console.log('🔍 Intentando método 2: Eventos...');
-                    method = 'events';
-
-                    if (contract.filters && contract.filters.ProductSold) {
-                        const filter = contract.filters.ProductSold(null, null, account);
-                        const events = await contract.queryFilter(filter);
-                        
-                        console.log(`📜 Eventos encontrados: ${events.length}`);
-                        
-                        for (const event of events) {
-                            const productId = Number(event.args.productId);
-                            
-                            try {
-                                const product = await contract.products(productId);
-                                
-                                if (Number(product.productId) !== 0) {
-                                    let txHash = event.transactionHash;
-                                    const storedHash = getTransactionHash(productId);
-                                    if (storedHash) txHash = storedHash;
-                                    
-                                    jewels.push({
-                                        id: productId,
-                                        name: product.name || 'Sin nombre',
-                                        description: product.description || 'Sin descripción',
-                                        price: product.price,
-                                        transactionHash: txHash,
-                                        purchaseDate: 'Reciente'
-                                    });
-
-                                    console.log(`✅ Joya ${productId} cargada desde eventos`);
-                                }
-                            } catch (productError) {
-                                console.warn(`Error: ${productError}`);
-                            }
-                        }
-
-                        console.log(`✅ Método 2 exitoso: ${jewels.length} joyas`);
+                    const product = await contract.products(productId);
+                    
+                    // Solo mostrar productos vendidos (no disponibles) que ahora te pertenecen
+                    if (!product.isAvailable) {
+                        jewels.push({
+                            id: productId,
+                            name: product.name || 'Sin nombre',
+                            description: product.description || 'Sin descripción',
+                            price: product.price,
+                            owner: product.owner,
+                            creator: product.creator || product.owner,
+                            isAvailable: product.isAvailable
+                        });
+                        console.log(`✅ Joya ${productId} añadida:`, product.name);
                     }
-                } catch (error2) {
-                    console.log('⚠️ Método 2 también falló');
+                } catch (productError) {
+                    console.error(`❌ Error cargando producto ${productId}:`, productError);
                 }
             }
 
-            if (jewels.length === 0 && !method) {
-                setError('needsUpdate');
-            }
-
+            console.log(`✅ Total joyas en colección: ${jewels.length}`);
             setMyProducts(jewels);
-            setLoadMethod(method);
             setError('');
 
         } catch (err) {
@@ -159,36 +81,7 @@ const MyJewels = ({ contract, account }) => {
         );
     }
 
-    if (error === 'needsUpdate') {
-        return (
-            <div className="flex flex-col items-center justify-center py-20">
-                <AlertCircle size={48} className="text-orange-500 mb-4" />
-                <p className="text-orange-600 font-semibold mb-2">Tu contrato necesita actualización</p>
-                <div className="bg-orange-50 border border-orange-300 rounded-lg p-6 max-w-2xl">
-                    <div className="flex items-start space-x-3">
-                        <Info size={24} className="text-orange-500 flex-shrink-0 mt-1" />
-                        <div>
-                            <p className="text-orange-700 text-sm mb-3">
-                                El contrato actual no tiene la función <code className="bg-orange-100 px-1 rounded">getProductsByOwner()</code> ni eventos configurados.
-                            </p>
-                            <p className="text-orange-700 text-sm font-semibold">
-                                Solución: Redesplegar con Joyeria_Fixed.sol
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                <button
-                    onClick={fetchMyJewels}
-                    className="mt-6 bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg transition flex items-center"
-                >
-                    <RefreshCw size={16} className="mr-2" />
-                    Reintentar
-                </button>
-            </div>
-        );
-    }
-
-    if (error && error !== 'needsUpdate') {
+    if (error) {
         return (
             <div className="flex flex-col items-center justify-center py-20">
                 <AlertCircle size={48} className="text-red-500 mb-4" />
@@ -213,7 +106,7 @@ const MyJewels = ({ contract, account }) => {
                     Tu colección está vacía
                 </p>
                 <p className="text-gray-400 mb-4">
-                    Compra joyas desde el Catálogo
+                    Compra joyas desde el Catálogo para ver aquí tus adquisiciones
                 </p>
                 <button
                     onClick={fetchMyJewels}
@@ -235,12 +128,7 @@ const MyJewels = ({ contract, account }) => {
                         Mi Colección de Joyas
                     </h3>
                     <p className="text-gray-500 text-sm mt-1">
-                        {myProducts.length} {myProducts.length === 1 ? 'joya' : 'joyas'}
-                        {loadMethod && (
-                            <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded">
-                                {loadMethod === 'getProductsByOwner' ? '✓ Contrato actualizado' : 'ℹ️ Usando eventos'}
-                            </span>
-                        )}
+                        {myProducts.length} {myProducts.length === 1 ? 'joya' : 'joyas'} en tu colección
                     </p>
                 </div>
                 <button
@@ -287,47 +175,18 @@ const MyJewels = ({ contract, account }) => {
                                 </div>
                             </div>
 
-                            {jewel.purchaseDate && (
-                                <div className="flex items-center justify-center text-xs text-gray-500 mb-4">
-                                    <Calendar size={12} className="mr-1" />
-                                    <span>{jewel.purchaseDate}</span>
+                            <div className="border-t border-purple-200 pt-4 mb-4">
+                                <div className="flex items-center justify-center text-gray-500 text-xs">
+                                    <Info size={14} className="mr-1" />
+                                    <span>Creador original: {jewel.creator.slice(0, 6)}...{jewel.creator.slice(-4)}</span>
                                 </div>
-                            )}
-
-                            <div className="border-t border-purple-200 pt-4">
-                                {jewel.transactionHash ? (
-                                    <div className="space-y-2">
-                                        <p className="text-xs text-gray-500 font-semibold">Hash de Compra:</p>
-                                        <div 
-                                            className="flex items-center justify-between bg-gray-50 rounded-lg p-2 cursor-pointer hover:bg-gray-100 transition"
-                                            onClick={() => window.open(`https://sepolia.etherscan.io/tx/${jewel.transactionHash}`, '_blank')}
-                                        >
-                                            <span className="text-xs font-mono text-gray-600 truncate flex-1" title={jewel.transactionHash}>
-                                                {jewel.transactionHash.slice(0, 10)}...{jewel.transactionHash.slice(-8)}
-                                            </span>
-                                            <ExternalLink size={14} className="text-blue-500 ml-2 flex-shrink-0" />
-                                        </div>
-                                        <button
-                                            onClick={() => window.open(`https://sepolia.etherscan.io/tx/${jewel.transactionHash}`, '_blank')}
-                                            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg text-sm transition flex items-center justify-center"
-                                        >
-                                            <ExternalLink size={14} className="mr-2" />
-                                            Ver en Etherscan
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center justify-center text-gray-400 text-xs py-2">
-                                        <Info size={14} className="mr-1" />
-                                        <span>Comprado antes del tracking</span>
-                                    </div>
-                                )}
                             </div>
 
                             <div className="mt-4 pt-4 border-t border-purple-200">
                                 <div className="flex items-center justify-center">
                                     <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center">
                                         <Crown size={14} className="mr-2" />
-                                        Tuyo
+                                        En tu posesión
                                     </div>
                                 </div>
                             </div>
