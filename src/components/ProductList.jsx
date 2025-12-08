@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
-import { Tag, Zap, Hourglass, RefreshCw, AlertCircle, Info } from 'lucide-react';
+import { Tag, Zap, Hourglass, RefreshCw, AlertCircle, Info, ExternalLink } from 'lucide-react';
 
 const formatEther = (wei) => {
     return ethers.formatEther(wei);
@@ -17,6 +17,9 @@ const ProductList = ({ contract, account }) => {
         hash: ""
     });
 
+    // 💾 Guardar hash por producto
+    const [productTxHash, setProductTxHash] = useState({});
+
     const fetchProducts = useCallback(async () => {
         if (!contract) {
             console.log('⚠️ Contrato no disponible');
@@ -28,11 +31,8 @@ const ProductList = ({ contract, account }) => {
         setError('');
 
         try {
-            console.log('📦 Iniciando carga de productos...');
-            
             const count = await contract.productCount();
             const productCount = Number(count);
-            console.log('📊 Total de productos:', productCount);
 
             const fetchedProducts = [];
             
@@ -54,12 +54,10 @@ const ProductList = ({ contract, account }) => {
                         break;
                     }
                 } catch {
-                    console.log(`⏭️ Fin de productos en índice ${i}`);
                     break;
                 }
             }
 
-            console.log(`✅ ${fetchedProducts.length} productos cargados`);
             setProducts(fetchedProducts);
             setError('');
 
@@ -78,30 +76,31 @@ const ProductList = ({ contract, account }) => {
         }
 
         try {
-            console.log(`💰 Iniciando compra del producto ${productId}...`);
-            
             const tx = await contract.buyProduct(productId, { value: price });
 
-            // 👉 Mostrar modal con el hash
+            // ✔ Guardar hash para mostrarlo después en la tabla
+            setProductTxHash(prev => ({
+                ...prev,
+                [productId]: tx.hash
+            }));
+
+            // 👉 Mostrar modal
             setTxModal({
                 open: true,
                 hash: tx.hash
             });
 
             await tx.wait();
-            console.log('✅ Transacción confirmada');
 
             await fetchProducts();
 
         } catch (err) {
-            console.error('❌ Error en la compra:', err);
             const errorMsg = err.reason || err.message || 'Error desconocido';
             alert(`❌ Fallo en la compra: ${errorMsg}`);
         }
     };
 
     useEffect(() => {
-        console.log('🔄 ProductList montado');
         fetchProducts();
     }, [fetchProducts]);
 
@@ -158,17 +157,15 @@ const ProductList = ({ contract, account }) => {
                 {products.map((product) => (
                     <div
                         key={product.id}
-                        className={`grid grid-cols-12 gap-4 items-center p-5 text-gray-800 transition duration-300 border-b border-gray-100
+                        className={`grid grid-cols-12 gap-4 items-center p-5 border-b border-gray-100
                                     ${product.isAvailable ? 'bg-gradient-to-r from-white to-pink-50 hover:bg-pink-100' : 'bg-gray-50/50 hover:bg-gray-100'}`}
                     >
                         <div className="col-span-3 font-semibold text-lg flex items-center">
                             <Tag size={18} className="text-pink-500 mr-2" />
-                            <span className="truncate" title={product.name}>
-                                {product.name}
-                            </span>
+                            <span className="truncate">{product.name}</span>
                         </div>
 
-                        <div className="col-span-3 text-sm italic text-gray-500 truncate" title={product.description}>
+                        <div className="col-span-3 text-sm italic text-gray-500 truncate">
                             {product.description}
                         </div>
 
@@ -197,17 +194,26 @@ const ProductList = ({ contract, account }) => {
                                     <Zap size={16} className="mr-1" /> Comprar
                                 </button>
                             ) : (
-                                <div className="flex items-center justify-end text-gray-400 text-xs">
-                                    <Info size={14} className="mr-1" />
-                                    <span>Vendido</span>
-                                </div>
+                                productTxHash[product.id] ? (
+                                    <a
+                                        href={`https://sepolia.etherscan.io/tx/${productTxHash[product.id]}`}
+                                        target="_blank"
+                                        className="text-pink-600 hover:text-pink-700 font-semibold text-sm flex items-center justify-end"
+                                    >
+                                        <ExternalLink size={16} className="mr-1" /> Ver Hash
+                                    </a>
+                                ) : (
+                                    <div className="flex items-center justify-end text-gray-400 text-xs">
+                                        <Info size={14} className="mr-1" />
+                                        <span>Vendido</span>
+                                    </div>
+                                )
                             )}
                         </div>
                     </div>
                 ))}
             </div>
 
-            {/* Modal de Transacción */}
             {txModal.open && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-2xl shadow-2xl p-8 w-96 border border-pink-200">
