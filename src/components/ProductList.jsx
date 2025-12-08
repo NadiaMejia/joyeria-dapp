@@ -10,7 +10,8 @@ const ProductList = ({ contract, account }) => {
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    
+
+    // 📌 Obtiene TODO desde el SmartContract — sin localStorage
     const fetchProducts = useCallback(async () => {
         if (!contract) {
             console.log('⚠️ Contrato no disponible');
@@ -22,18 +23,16 @@ const ProductList = ({ contract, account }) => {
         setError('');
 
         try {
-            console.log('📦 Iniciando carga de productos...');
-            
+            console.log('📦 Cargando productos desde el contrato...');
+
             const count = await contract.productCount();
-            const productCount = Number(count);
-            console.log('📊 Total de productos:', productCount);
+            const total = Number(count);
 
             const fetchedProducts = [];
-            
-            for (let i = 1; i <= productCount; i++) { 
+
+            for (let i = 1; i <= total; i++) {
                 try {
                     const product = await contract.products(i);
-                    
                     if (Number(product.productId) !== 0) {
                         fetchedProducts.push({
                             id: Number(product.productId),
@@ -44,72 +43,56 @@ const ProductList = ({ contract, account }) => {
                             owner: product.owner,
                             creator: product.creator || product.owner
                         });
-                    } else {
-                        break;
                     }
-                } catch (productError) {
-                    console.log(`⏭️ Fin de productos en índice ${i}`);
+                } catch {
                     break;
                 }
             }
 
-            console.log(`✅ ${fetchedProducts.length} productos cargados`);
             setProducts(fetchedProducts);
-            setError('');
+            console.log(`✅ Productos cargados desde blockchain: ${fetchedProducts.length}`);
 
         } catch (err) {
             console.error('❌ Error al cargar productos:', err);
-            setError(`No se pudieron cargar los productos: ${err.message || 'Error desconocido'}`);
+            setError(err.message || 'Error desconocido');
         } finally {
             setLoading(false);
         }
     }, [contract]);
 
+    // ⚡ Comprar directo del contrato (sin localStorage)
     const handleBuy = async (productId, price) => {
-        if (!contract) {
-            alert('❌ Contrato no disponible');
-            return;
-        }
+        if (!contract) return alert('❌ Contrato no disponible');
 
         try {
-            console.log(`💰 Iniciando compra del producto ${productId}...`);
-            
-            const tx = await contract.buyProduct(productId, {
-                value: price,
-            });
+            const tx = await contract.buyProduct(productId, { value: price });
 
-            console.log('📤 Hash de transacción:', tx.hash);
-
-            const verEnEtherscan = confirm(
-                `⏳ Transacción enviada!\n\nHash: ${tx.hash}\n\n¿Quieres ver la transacción en Sepolia Etherscan?`
+            const ver = confirm(
+                `Transacción enviada\nHash: ${tx.hash}\n\n¿Ver en Etherscan?`
             );
 
-            if (verEnEtherscan) {
-                window.open(`https://sepolia.etherscan.io/tx/${tx.hash}`, '_blank');
+            if (ver) {
+                window.open(`https://sepolia.etherscan.io/tx/${tx.hash}`, "_blank");
             }
 
             await tx.wait();
-            console.log('✅ Transacción confirmada');
-            
-            alert(`✅ ¡Compra exitosa!\n\nEl producto ahora es tuyo.\n\nHash: ${tx.hash}`);
-            
-            // Recargar productos después de la compra
-            await fetchProducts(); 
+            alert("✅ Compra completada en la blockchain");
+
+            // Recargar desde el contrato
+            await fetchProducts();
 
         } catch (err) {
-            console.error('❌ Error en la compra:', err);
-            const errorMsg = err.reason || err.message || 'Error desconocido';
-            alert(`❌ Fallo en la compra: ${errorMsg}`);
-            
+            const msg = err.reason || err.message || 'Error desconocido';
+            alert(`❌ Error al comprar: ${msg}`);
             await fetchProducts();
         }
     };
-    
+
     useEffect(() => {
-        console.log('🔄 ProductList montado');
         fetchProducts();
     }, [fetchProducts]);
 
+    // ---------- UI (IGUAL QUE LA TUYA) ----------
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center py-20">
@@ -182,16 +165,20 @@ const ProductList = ({ contract, account }) => {
                 </div>
 
                 {products.map((product) => {
-                    const isOwner = account && product.owner.toLowerCase() === account.toLowerCase();
-                    
+                    const isOwner =
+                        account &&
+                        product.owner.toLowerCase() === account.toLowerCase();
+
                     return (
-                        <div 
-                            key={product.id} 
+                        <div
+                            key={product.id}
                             className={`grid grid-cols-12 gap-4 items-center p-5 text-gray-800 transition duration-300 border-b border-gray-100 
-                                        ${product.isAvailable ? 'bg-gradient-to-r from-white to-pink-50 hover:bg-pink-100' : 'bg-gray-50/50 hover:bg-gray-100'}`}
+                                ${product.isAvailable
+                                    ? 'bg-gradient-to-r from-white to-pink-50 hover:bg-pink-100'
+                                    : 'bg-gray-50/50 hover:bg-gray-100'}`}
                         >
                             <div className="col-span-3 font-semibold text-lg flex items-center">
-                                <Tag size={18} className="text-pink-500 mr-2"/>
+                                <Tag size={18} className="text-pink-500 mr-2" />
                                 <span className="truncate" title={product.name}>
                                     {product.name}
                                 </span>
