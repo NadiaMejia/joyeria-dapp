@@ -1,7 +1,7 @@
 // Dirección del contrato desplegado en Sepolia
-export const CONTRACT_ADDRESS = "0x63FfBc3757a7088e4D1aB2390Cb79505D8E729c2";
+export const CONTRACT_ADDRESS = "0x077dBa6CeBBA8712296DF97f91200949a1dCaa34";
 
-// ABI del contrato Joyeria (SIN restricciÃ³n de autocompra)
+// ABI del contrato Joyeria
 export const CONTRACT_ABI = [
   {
     "inputs": [],
