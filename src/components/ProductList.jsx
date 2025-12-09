@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
-import { Tag, Zap, Hourglass, RefreshCw, AlertCircle, Info, ExternalLink, CheckCircle } from 'lucide-react';
+import { Tag, Zap, Hourglass, RefreshCw, AlertCircle, Info, ExternalLink, CheckCircle, FileText } from 'lucide-react';
 
 const formatEther = (wei) => {
     return ethers.formatEther(wei);
@@ -235,24 +235,30 @@ const ProductList = ({ contract, account }) => {
                                     <Zap size={16} className="mr-1" /> Comprar
                                 </button>
                             ) : (
-                                <div className="flex flex-col items-end space-y-1">
+                                <div className="flex flex-col items-end space-y-2">
                                     {productTransactions[product.id] ? (
                                         <>
+                                            {/* Badge de confirmación */}
                                             <div className="flex items-center text-green-600 text-xs font-semibold">
                                                 <CheckCircle size={14} className="mr-1" />
                                                 <span>Transacción registrada</span>
                                             </div>
+                                            
+                                            {/* 🆕 Botón permanente para ver en Etherscan */}
                                             <a
                                                 href={`https://sepolia.etherscan.io/tx/${productTransactions[product.id]}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-pink-600 hover:text-pink-700 font-mono text-xs flex items-center bg-pink-50 px-3 py-1.5 rounded-lg border border-pink-200 hover:border-pink-400 transition"
+                                                className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-2 px-4 rounded-full text-xs transition duration-300 transform hover:scale-105 shadow-lg flex items-center"
                                             >
-                                                <ExternalLink size={14} className="mr-1 flex-shrink-0" />
-                                                <span className="truncate max-w-[120px]">
-                                                    {productTransactions[product.id].slice(0, 8)}...{productTransactions[product.id].slice(-6)}
-                                                </span>
+                                                <FileText size={14} className="mr-1" />
+                                                Ver TX en Etherscan
                                             </a>
+                                            
+                                            {/* Hash corto (opcional - para mostrar el hash también) */}
+                                            <div className="text-gray-500 font-mono text-[10px] bg-gray-100 px-2 py-1 rounded">
+                                                {productTransactions[product.id].slice(0, 10)}...{productTransactions[product.id].slice(-8)}
+                                            </div>
                                         </>
                                     ) : (
                                         <div className="flex items-center justify-end text-gray-400 text-xs">
